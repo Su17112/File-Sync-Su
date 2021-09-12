@@ -55,6 +55,7 @@ def recursiveUpload(self, sftp, localPath, remotePath):  # 递归上传，供上
 界面如图
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/18fe018e2b56484d85279695dae13467.png?#pic_centerx-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAQOiLj-S4tg==,size_20,color_FFFFFF,t_70,g_se,x_16)
+
 GUI 部分主要使用了 **pack** 布局，代码如下，通过类的实例化操作来实现。
 
 ```python
