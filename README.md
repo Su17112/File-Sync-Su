@@ -4,8 +4,6 @@
 
 目前开机自启需要手动创建任务计划，后面考虑增加设置。
 
-@[TOC]
-
 ## 1. 主要使用的库
 		Tkinter
 		paramiko(需要安装pycrytodome)
