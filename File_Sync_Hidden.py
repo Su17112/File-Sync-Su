@@ -5,6 +5,7 @@ import ctypes
 import inspect
 import threading
 import tkinter as tk
+import tkinter.messagebox
 from tkinter.ttk import Frame
 import paramiko
 import os
@@ -64,12 +65,19 @@ class MainPage(object):
         self.SysTrayIcon = None
         self.root = root
         self.root.geometry('%dx%d' % (580, 250))  # 设置窗口大小
+        # 最小化托盘设置
         self.root.bind("<Unmap>",
                        lambda
                            event: self.Hidden_window() if self.root.state() == 'iconic' else False)  # 窗口最小化判断，可以说是调用最重要的一步
         self.root.protocol('WM_DELETE_WINDOW', self.exit)  # 点击Tk窗口关闭时直接调用s.exit，不使用默认关闭
+        # 菜单
+        self.menubar = tk.Menu(self.root)  # 创建一个顶级菜单
+        self.filemenu = tk.Menu(self.menubar, tearoff=False)  # 创建一个下拉菜单
+        self.filemenu.add_command(label='开机自启动', command=self.AutoRun)  # 下拉菜单中添加项
+        self.menubar.add_cascade(label="设置", menu=self.filemenu)  # 下拉菜单添加到顶级菜单
+        self.root.config(menu=self.menubar)  # 显示菜单
         # 输入框配置
-        self.page = Frame(self.root, padding=(5, 20, 10, 20))  # 创建Frame,左上右下
+        self.page = Frame(self.root, padding=(5, 10, 10, 10))  # 创建Frame,左上右下
         self.page.pack()
         # 按钮配置
         self.buttonPage = Frame(self.root, padding=(10, 10, 10, 20))
@@ -77,7 +85,7 @@ class MainPage(object):
         # 读取注册表
         self.key = CreateKey(HKEY_LOCAL_MACHINE, r'SOFTWARE\\服务器同步软件')
         self.regDict = ReadReg(self.key)
-        errorFlag = 0
+        self.errorflag = 0
         # ip输入
         tk.Label(self.page, text='IP         ：').grid(row=1, column=1)
         self.ipText = tk.Entry(self.page)
@@ -86,7 +94,7 @@ class MainPage(object):
             self.ipText.delete(0, tk.END)
             self.ipText.insert(0, self.regDict['ip'])
         except KeyError:
-            errorFlag += 1
+            self.errorflag += 1
         tk.Label(self.page, text='    ').grid(row=1, column=3)
         # 端口输入
         tk.Label(self.page, text='端      口：').grid(row=1, column=4)
@@ -96,7 +104,7 @@ class MainPage(object):
             self.portText.delete(0, tk.END)
             self.portText.insert(0, self.regDict['port'])
         except KeyError:
-            errorFlag += 1
+            self.errorflag += 1
         # 空行
         tk.Label(self.page, text='    ').grid(row=2)
         # 用户名输入
@@ -107,7 +115,7 @@ class MainPage(object):
             self.username.delete(0, tk.END)
             self.username.insert(0, self.regDict['user'])
         except KeyError:
-            errorFlag += 1
+            self.errorflag += 1
         tk.Label(self.page, text='    ').grid(row=3, column=3)
         # 密码输入
         tk.Label(self.page, text='密      码：').grid(row=3, column=4)
@@ -117,7 +125,7 @@ class MainPage(object):
             self.password.delete(0, tk.END)
             self.password.insert(0, self.regDict['pwd'])
         except KeyError:
-            errorFlag += 1
+            self.errorflag += 1
         # 空行
         tk.Label(self.page, text='    ').grid(row=4)
         # 本地文件夹输入
@@ -128,7 +136,7 @@ class MainPage(object):
             self.localPath.delete(0, tk.END)
             self.localPath.insert(0, self.regDict['lPath'])
         except KeyError:
-            errorFlag += 1
+            self.errorflag += 1
         # 空行
         tk.Label(self.page, text='    ').grid(row=6)
         # 远程文件夹输入
@@ -139,7 +147,7 @@ class MainPage(object):
             self.remotePath.delete(0, tk.END)
             self.remotePath.insert(0, self.regDict['rPath'])
         except KeyError:
-            errorFlag += 1
+            self.errorflag += 1
         # 同步按钮
         self.startSyncButton = tk.Button(self.buttonPage, text='开始同步', command=self.startSyncFunction)
         self.startSyncButton.grid(row=1, column=0)
@@ -147,8 +155,19 @@ class MainPage(object):
         # 停止按钮
         self.stopSyncButton = tk.Button(self.buttonPage, text='停止同步', state='disabled', command=self.stopSyncFunction)
         self.stopSyncButton.grid(row=1, column=2)
+        # 加载图片
+        self.gif = resource_path(os.path.join("img", "loading.gif"))
+        self.ico = resource_path(os.path.join("img", "loading.ico"))
+        self.img = Image.open(self.gif)  # 打开图片
+        iter = ImageSequence.Iterator(self.img)  # 分割成帧
+        self.img = []
+        for frame in iter:  # 每个frame是1帧
+            frame = frame.convert('RGBA')
+            frame = frame.resize((25, 25), Image.ANTIALIAS)
+            frame = ImageTk.PhotoImage(frame)
+            self.img.append(frame)
         # 如果信息全，则执行上传
-        if errorFlag == 0:
+        if self.errorflag == 0:
             self.startSyncFunction()
             self.Hidden_window()
 
@@ -203,12 +222,7 @@ class MainPage(object):
 
     def loadingImg(self):  # 转圈圈函数
         while 1:
-            img = Image.open(resource_path(os.path.join("img", "loading.gif")))  # 打开图片
-            iter = ImageSequence.Iterator(img)  # 分割成帧
-            for frame in iter:  # 每个frame是1帧
-                frame = frame.convert('RGBA')
-                frame = frame.resize((25, 25), Image.ANTIALIAS)
-                pic = ImageTk.PhotoImage(frame)  # 转换成TK格式
+            for pic in self.img:  # 每个pic是1帧
                 tk.Label(self.buttonPage, image=pic).grid(row=1, column=1)
                 time.sleep(0.2)
                 self.root.update_idletasks()
@@ -268,27 +282,38 @@ class MainPage(object):
     #     except IOError:  # 如果目录不存在则抛出异常
     #         return ("remote_path or local_path is not exist")
     #     scp.close()
+
+    def AutoRun(self):  # 自启动函数
+        try:
+            exePath = os.path.realpath(sys.executable)
+            AutoRunCommand = r'echo y | SCHTASKS /CREATE /TN "FileSync\FileSync" /TR "{}" /SC ONLOGON /DELAY 0000:30 /RL HIGHEST'.format(
+                exePath)
+            os.system(AutoRunCommand)
+            tkinter.messagebox.showinfo('开机自启动', '设置成功')
+        except:
+            tkinter.messagebox.showinfo('开机自启动', '设置失败，请手动创建任务计划')
+
     # 以下是菜单功能
     def show_msg(self, title='标题', msg='内容', time=5):
         self.SysTrayIcon.refresh(title=title, msg=msg, time=time)
 
-    def use_startSyncFunc(self, _sysTrayIcon, icon=resource_path(os.path.join("img", "loading.ico"))):
+    def use_startSyncFunc(self, _sysTrayIcon):
         # 此函数调用开始同步函数
         self.startSyncFunction()
-        _sysTrayIcon.icon = icon
+        _sysTrayIcon.icon = self.ico
         _sysTrayIcon.refresh()
         # 气泡提示的例子
         self.show_msg(title='开始同步', msg='开始同步！', time=5)
 
-    def use_stopSyncFunc(self, _sysTrayIcon, icon=resource_path(os.path.join("img", "loading.ico"))):
+    def use_stopSyncFunc(self, _sysTrayIcon):
         # 此函数调用停止同步函数
         self.stopSyncFunction()
-        _sysTrayIcon.icon = icon
+        _sysTrayIcon.icon = self.ico
         _sysTrayIcon.refresh()
         # 气泡提示的例子
         self.show_msg(title='停止同步', msg='停止同步！', time=5)
 
-    def Hidden_window(self, icon=resource_path(os.path.join("img", "loading.ico")), hover_text="服务器同步软件"):
+    def Hidden_window(self, hover_text="服务器同步软件"):
         '''隐藏窗口至托盘区，调用SysTrayIcon的重要函数'''
 
         # 托盘图标右键菜单, 格式: ('name', None, callback),下面也是二级菜单的例子
@@ -299,7 +324,7 @@ class MainPage(object):
         self.root.withdraw()  # 隐藏tk窗口
         if not self.SysTrayIcon:
             self.SysTrayIcon = SysTrayIcon(
-                icon,  # 图标
+                self.ico,  # 图标
                 hover_text,  # 光标停留显示文字
                 menu_options,  # 右键菜单
                 on_quit=self.exit,  # 退出调用
