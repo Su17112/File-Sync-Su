@@ -1,8 +1,8 @@
 本人手里面有一个安装 FileRun 的 Linux 服务器，其中有一个文件夹存放的内容与本人电脑中一个文件夹相同，每次有文件增添时都要手动上传，FileRun 提供的软件只能在 https 域名上使用，而我的是 http ，所以闲着没事自己写了个同步的软件。
 
-软件自动记录上次配置信息（写入注册表），可以托盘运行（上传使用的是额外线程，不会阻塞），支持开机自启（使用 os.system 操作 SchTasks）。
+软件自动记录上次配置信息（写入注册表），可以托盘运行（上传使用的是额外线程，不会阻塞），支持开机自启（使用 **os.system** 操作 **SchTasks**）。
 
-目前开机自启需要手动创建任务计划，后面考虑增加设置。
+本文包含了很多模块的相关代码，想要使用某一块的内容直接跳转复制即可，当然点个赞更好了！
 
 ## 1. 主要使用的库
 		Tkinter
@@ -31,6 +31,7 @@ scp.close()
 > [Python通过paramiko复制远程文件及文件目录到本地——作者：森林番茄](https://blog.csdn.net/fangfu123/article/details/83859204)
 
 上面代码中，前三行是创建了一个sftp对象，使用该对象进行文件操作。
+
 **recursiveUpload** 函数用于递归上传，主要作用是将子目录和其中文件也上传到服务器。
 接下来的代码是赋予上传的文件 777 权限，因为不给权限的话在 FileRun 中不能操作，try 部分代码如不需要可删除。
 
@@ -54,7 +55,7 @@ def recursiveUpload(self, sftp, localPath, remotePath):  # 递归上传，供上
 ## 3. GUI 部分（Tkinter）
 界面如图
 
-![在这里插入图片描述](https://img-blog.csdnimg.cn/18fe018e2b56484d85279695dae13467.png?#pic_centerx-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAQOiLj-S4tg==,size_20,color_FFFFFF,t_70,g_se,x_16)
+![在这里插入图片描述](https://img-blog.csdnimg.cn/4dd723dd9b804e5988f791bc709364b3.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAQOiLj-S4tg==,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center)
 
 GUI 部分主要使用了 **pack** 布局，代码如下，通过类的实例化操作来实现。
 
@@ -65,6 +66,12 @@ def __init__(self, root):
     # 输入框配置
     self.page = Frame(self.root, padding=(5, 20, 10, 20))  # 创建Frame,左上右下
     self.page.pack()
+    # 菜单
+    self.menubar = tk.Menu(self.root)  # 创建一个顶级菜单
+    self.filemenu = tk.Menu(self.menubar, tearoff=False)  # 创建一个下拉菜单
+    self.filemenu.add_command(label='开机自启动', command=self.AutoRun)  # 下拉菜单中添加项
+    self.menubar.add_cascade(label="设置", menu=self.filemenu)  # 下拉菜单添加到顶级菜单
+    self.root.config(menu=self.menubar)  # 显示菜单
     # 按钮配置
     self.buttonPage = Frame(self.root, padding=(10, 10, 10, 20))
     self.buttonPage.pack(side=tk.BOTTOM)
@@ -483,12 +490,20 @@ def exit(self, _sysTrayIcon=None):
     print('exit...')
 ```
 ## 6. 自启动部分（SchTasks）
-拟采用 **os.system** 执行 **SchTasks** 命令。
+点击界面顶端设置中的开机自启动来进行设置，使用 **os.system** 执行 **SchTasks** 命令，代码如下
+```python
+def AutoRun(self):  # 自启动函数
+    try:
+        exePath = os.path.realpath(sys.executable)
+        AutoRunCommand = r'echo y | SCHTASKS /CREATE /TN "FileSync\FileSync" /TR "{}" /SC ONLOGON /DELAY 0000:30 /RL HIGHEST'.format(
+            exePath)
+        os.system(AutoRunCommand)
+        tkinter.messagebox.showinfo('开机自启动', '设置成功')
+    except:
+        tkinter.messagebox.showinfo('开机自启动', '设置失败，请手动创建任务计划')
+```
 
-代码写的比较匆忙，暂未实现，目前可通过手动创建管理员权限（由于进行了注册表操作）的任务计划，并将程序属性中以管理员权限启动打钩来实现开机自启动。
-
-具体方法参考以下链接
-
+如果自启动设置失败，可通过手动创建管理员权限（由于进行了注册表操作）的任务计划，具体方法参考以下链接
 > [如何创建Windows计划任务](https://jingyan.baidu.com/article/0964eca2cb8c17c284f53670.html)
 
 ## 7. 生成exe文件（Pyinstaller）
@@ -509,3 +524,5 @@ img为目前要打包的其他数据所在目录，img为使用时生成临时�
 ```python
 pyinstaller -F -w --uac-admin File_Sync_Hidden.spec
 ```
+## 8. 写在最后
+感谢文中所引用部分作者分享的代码，如果没有这些代码作为参考，想要完成这些功能并搭配协作将会很难完成，如果所使用的代码涉及到了侵权，请私信我告知。
