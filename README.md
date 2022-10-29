@@ -1,12 +1,6 @@
-本人手里面有一个安装 FileRun 的 Linux 服务器，其中有一个文件夹存放的内容与本人电脑中一个文件夹相同，每次有文件增添时都要手动上传，FileRun 提供的软件只能在 https 域名上使用，而我的是 http ，所以闲着没事自己写了个同步的软件。
-
-软件自动记录上次配置信息（写入注册表），可以托盘运行（上传使用的是额外线程，不会阻塞），支持开机自启（使用 **os.system** 操作 **SchTasks**）。
-
-本文包含了很多模块的相关代码，想要使用某一块的内容直接跳转复制即可，当然点个赞更好了！
-
 ## 1. 主要使用的库
-		Tkinter
-		paramiko(需要安装pycrytodome)
+		PyQt
+		paramiko(需要安装pycryptodome)
 		winreg
 		thread
 		pillow
@@ -39,125 +33,301 @@ scp.close()
 
 ```python
 def recursiveUpload(self, sftp, localPath, remotePath):  # 递归上传，供上传函数调用
-    for root, paths, files in os.walk(localPath):  # 遍历读取目录里的所有文件
+    for root, paths, files in walk(localPath):  # 遍历读取目录里的所有文件
         remote_files = sftp.listdir(remotePath)  # 获取远端服务器路径内所有文件名
         for file in files:
             if file not in remote_files:
                 print('正在上传', remotePath + '/' + file)
-                sftp.put(os.path.join(root, file), remotePath + '/' + file)
+                sftp.put(join(root, file), remotePath + '/' + file)
         for path in paths:
             if path not in remote_files:
                 print('创建文件夹', remotePath + '/' + path)
                 sftp.mkdir(remotePath + '/' + path)
-            self.recursiveUpload(sftp, os.path.join(localPath, path), remotePath + '/' + path)
+            self.recursiveUpload(sftp, join(localPath, path), remotePath + '/' + path)
         break
 ```
-## 3. GUI 部分（Tkinter）
+## 3. GUI 部分（PyQt）
 界面如图
+![在这里插入图片描述](https://img-blog.csdnimg.cn/d1fe3ccf852a46eab928e086cd018707.png#pic_center)
 
-![在这里插入图片描述](https://img-blog.csdnimg.cn/4dd723dd9b804e5988f791bc709364b3.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAQOiLj-S4tg==,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center)
-
-GUI 部分主要使用了 **pack** 布局，代码如下，通过类的实例化操作来实现。
+GUI 部分代码如下，通过QtDesigner制作
 
 ```python
-def __init__(self, root):
-    self.root = root
-    self.root.geometry('%dx%d' % (580, 250))  # 设置窗口大小
-    # 输入框配置
-    self.page = Frame(self.root, padding=(5, 20, 10, 20))  # 创建Frame,左上右下
-    self.page.pack()
-    # 菜单
-    self.menubar = tk.Menu(self.root)  # 创建一个顶级菜单
-    self.filemenu = tk.Menu(self.menubar, tearoff=False)  # 创建一个下拉菜单
-    self.filemenu.add_command(label='开机自启动', command=self.AutoRun)  # 下拉菜单中添加项
-    self.menubar.add_cascade(label="设置", menu=self.filemenu)  # 下拉菜单添加到顶级菜单
-    self.root.config(menu=self.menubar)  # 显示菜单
-    # 按钮配置
-    self.buttonPage = Frame(self.root, padding=(10, 10, 10, 20))
-    self.buttonPage.pack(side=tk.BOTTOM)
-    # ip输入
-    tk.Label(self.page, text='IP         ：').grid(row=1, column=1)
-    self.ipText = tk.Entry(self.page)
-    self.ipText.grid(row=1, column=2)
-    tk.Label(self.page, text='    ').grid(row=1, column=3)
-    # 端口输入
-    tk.Label(self.page, text='端      口：').grid(row=1, column=4)
-    self.portText = tk.Entry(self.page)
-    self.portText.grid(row=1, column=5)
-    # 空行
-    tk.Label(self.page, text='    ').grid(row=2)
-    # 用户名输入
-    tk.Label(self.page, text='用 户 名 ：').grid(row=3, column=1)
-    self.username = tk.Entry(self.page)
-    self.username.grid(row=3, column=2)
-    tk.Label(self.page, text='    ').grid(row=3, column=3)
-    # 密码输入
-    tk.Label(self.page, text='密      码：').grid(row=3, column=4)
-    self.password = tk.Entry(self.page)
-    self.password.grid(row=3, column=5)
-    # 空行
-    tk.Label(self.page, text='    ').grid(row=4)
-    # 本地文件夹输入
-    tk.Label(self.page, text='本地路径：').grid(row=5, column=1)
-    self.localPath = tk.Entry(self.page, width=54)
-    self.localPath.grid(row=5, column=2, columnspan=4)
-    # 空行
-    tk.Label(self.page, text='    ').grid(row=6)
-    # 远程文件夹输入
-    tk.Label(self.page, text='远端路径：').grid(row=7, column=1)
-    self.remotePath = tk.Entry(self.page, width=54)
-    self.remotePath.grid(row=7, column=2, columnspan=4)
-    # 同步按钮
-    self.startSyncButton = tk.Button(self.buttonPage, text='开始同步', command=self.startSyncFunction)
-    self.startSyncButton.grid(row=1, column=0)
-    tk.Label(self.buttonPage, text='                               ').grid(row=1, column=1)
-    # 停止按钮
-    self.stopSyncButton = tk.Button(self.buttonPage, text='停止同步', state='disabled', command=self.stopSyncFunction)
-    self.stopSyncButton.grid(row=1, column=2)
-```
-其中 **startSyncButton** 响应开始同步按钮，主要作用是启动上传文件线程，**stopSyncButton** 响应停止同步按钮，主要作用是强制停止上传文件线程。
+# -*- coding: utf-8 -*-
 
-**startSyncButton**函数如下
+# Form implementation generated from reading ui file 'MainWindow.ui'
+#
+# Created by: PyQt5 UI code generator 5.15.4
+#
+# WARNING: Any manual changes made to this file will be lost when pyuic5 is
+# run again.  Do not edit this file unless you know what you are doing.
+
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+
+class Ui_MainWindow(object):
+    def setupUi(self, MainWindow):
+        MainWindow.setObjectName("MainWindow")
+        MainWindow.resize(650, 280)
+        MainWindow.setMinimumSize(QtCore.QSize(650, 280))
+        MainWindow.setMaximumSize(QtCore.QSize(650, 280))
+        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        self.centralwidget.setObjectName("centralwidget")
+        self.gridLayout = QtWidgets.QGridLayout(self.centralwidget)
+        self.gridLayout.setObjectName("gridLayout")
+        spacerItem = QtWidgets.QSpacerItem(20, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.gridLayout.addItem(spacerItem, 0, 1, 1, 1)
+        spacerItem1 = QtWidgets.QSpacerItem(33, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.gridLayout.addItem(spacerItem1, 1, 0, 1, 1)
+        self.verticalLayout = QtWidgets.QVBoxLayout()
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.horizontalLayout_7 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_7.setObjectName("horizontalLayout_7")
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.horizontalLayout.setObjectName("horizontalLayout")
+        self.label = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.label.setFont(font)
+        self.label.setObjectName("label")
+        self.horizontalLayout.addWidget(self.label)
+        self.lineEdit_ip = QtWidgets.QLineEdit(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.lineEdit_ip.setFont(font)
+        self.lineEdit_ip.setObjectName("lineEdit_ip")
+        self.horizontalLayout.addWidget(self.lineEdit_ip)
+        self.horizontalLayout_7.addLayout(self.horizontalLayout)
+        spacerItem2 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_7.addItem(spacerItem2)
+        self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_2.setObjectName("horizontalLayout_2")
+        self.label_2 = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.label_2.setFont(font)
+        self.label_2.setObjectName("label_2")
+        self.horizontalLayout_2.addWidget(self.label_2)
+        self.lineEdit_port = QtWidgets.QLineEdit(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.lineEdit_port.setFont(font)
+        self.lineEdit_port.setObjectName("lineEdit_port")
+        self.horizontalLayout_2.addWidget(self.lineEdit_port)
+        self.horizontalLayout_7.addLayout(self.horizontalLayout_2)
+        self.verticalLayout.addLayout(self.horizontalLayout_7)
+        spacerItem3 = QtWidgets.QSpacerItem(14, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.verticalLayout.addItem(spacerItem3)
+        self.horizontalLayout_8 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_8.setObjectName("horizontalLayout_8")
+        self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
+        self.label_4 = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.label_4.setFont(font)
+        self.label_4.setObjectName("label_4")
+        self.horizontalLayout_3.addWidget(self.label_4)
+        self.lineEdit_username = QtWidgets.QLineEdit(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.lineEdit_username.setFont(font)
+        self.lineEdit_username.setObjectName("lineEdit_username")
+        self.horizontalLayout_3.addWidget(self.lineEdit_username)
+        self.horizontalLayout_8.addLayout(self.horizontalLayout_3)
+        spacerItem4 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_8.addItem(spacerItem4)
+        self.horizontalLayout_4 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
+        self.label_3 = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.label_3.setFont(font)
+        self.label_3.setObjectName("label_3")
+        self.horizontalLayout_4.addWidget(self.label_3)
+        self.lineEdit_password = QtWidgets.QLineEdit(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.lineEdit_password.setFont(font)
+        self.lineEdit_password.setObjectName("lineEdit_password")
+        self.horizontalLayout_4.addWidget(self.lineEdit_password)
+        self.horizontalLayout_8.addLayout(self.horizontalLayout_4)
+        self.verticalLayout.addLayout(self.horizontalLayout_8)
+        spacerItem5 = QtWidgets.QSpacerItem(14, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.verticalLayout.addItem(spacerItem5)
+        self.horizontalLayout_5 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
+        self.label_5 = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.label_5.setFont(font)
+        self.label_5.setObjectName("label_5")
+        self.horizontalLayout_5.addWidget(self.label_5)
+        self.lineEdit_localpath = QtWidgets.QLineEdit(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.lineEdit_localpath.setFont(font)
+        self.lineEdit_localpath.setObjectName("lineEdit_localpath")
+        self.horizontalLayout_5.addWidget(self.lineEdit_localpath)
+        self.verticalLayout.addLayout(self.horizontalLayout_5)
+        spacerItem6 = QtWidgets.QSpacerItem(14, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.verticalLayout.addItem(spacerItem6)
+        self.horizontalLayout_6 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_6.setObjectName("horizontalLayout_6")
+        self.label_6 = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.label_6.setFont(font)
+        self.label_6.setObjectName("label_6")
+        self.horizontalLayout_6.addWidget(self.label_6)
+        self.lineEdit_remotepath = QtWidgets.QLineEdit(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.lineEdit_remotepath.setFont(font)
+        self.lineEdit_remotepath.setObjectName("lineEdit_remotepath")
+        self.horizontalLayout_6.addWidget(self.lineEdit_remotepath)
+        self.verticalLayout.addLayout(self.horizontalLayout_6)
+        spacerItem7 = QtWidgets.QSpacerItem(14, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.verticalLayout.addItem(spacerItem7)
+        self.horizontalLayout_12 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_12.setObjectName("horizontalLayout_12")
+        self.horizontalLayout_10 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_10.setObjectName("horizontalLayout_10")
+        spacerItem8 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_10.addItem(spacerItem8)
+        self.btn_start = QtWidgets.QPushButton(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.btn_start.setFont(font)
+        self.btn_start.setObjectName("btn_start")
+        self.horizontalLayout_10.addWidget(self.btn_start)
+        self.horizontalLayout_12.addLayout(self.horizontalLayout_10)
+        self.horizontalLayout_11 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_11.setObjectName("horizontalLayout_11")
+        spacerItem9 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_11.addItem(spacerItem9)
+        self.loading = QtWidgets.QLabel(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.loading.setFont(font)
+        self.loading.setObjectName("loading")
+        self.horizontalLayout_11.addWidget(self.loading)
+        spacerItem10 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_11.addItem(spacerItem10)
+        self.horizontalLayout_12.addLayout(self.horizontalLayout_11)
+        self.horizontalLayout_9 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_9.setObjectName("horizontalLayout_9")
+        self.btn_stop = QtWidgets.QPushButton(self.centralwidget)
+        font = QtGui.QFont()
+        font.setPointSize(12)
+        self.btn_stop.setFont(font)
+        self.btn_stop.setObjectName("btn_stop")
+        self.horizontalLayout_9.addWidget(self.btn_stop)
+        spacerItem11 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout_9.addItem(spacerItem11)
+        self.horizontalLayout_12.addLayout(self.horizontalLayout_9)
+        self.verticalLayout.addLayout(self.horizontalLayout_12)
+        self.gridLayout.addLayout(self.verticalLayout, 1, 1, 1, 1)
+        spacerItem12 = QtWidgets.QSpacerItem(33, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.gridLayout.addItem(spacerItem12, 1, 2, 1, 1)
+        spacerItem13 = QtWidgets.QSpacerItem(20, 13, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self.gridLayout.addItem(spacerItem13, 2, 1, 1, 1)
+        MainWindow.setCentralWidget(self.centralwidget)
+        self.menubar = QtWidgets.QMenuBar(MainWindow)
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 650, 23))
+        self.menubar.setObjectName("menubar")
+        self.menu = QtWidgets.QMenu(self.menubar)
+        self.menu.setObjectName("menu")
+        MainWindow.setMenuBar(self.menubar)
+        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar.setObjectName("statusbar")
+        MainWindow.setStatusBar(self.statusbar)
+        self.actionabc = QtWidgets.QAction(MainWindow)
+        self.actionabc.setObjectName("actionabc")
+        self.actionboot = QtWidgets.QAction(MainWindow)
+        self.actionboot.setObjectName("actionboot")
+        self.menu.addAction(self.actionboot)
+        self.menubar.addAction(self.menu.menuAction())
+
+        self.retranslateUi(MainWindow)
+        QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
+    def retranslateUi(self, MainWindow):
+        _translate = QtCore.QCoreApplication.translate
+        MainWindow.setWindowTitle(_translate("MainWindow", "服务器同步软件"))
+        self.label.setText(_translate("MainWindow", "IP      :"))
+        self.label_2.setText(_translate("MainWindow", "端    口:"))
+        self.label_4.setText(_translate("MainWindow", "用 户 名:"))
+        self.label_3.setText(_translate("MainWindow", "密    码:"))
+        self.label_5.setText(_translate("MainWindow", "本地路径:"))
+        self.label_6.setText(_translate("MainWindow", "远端路径:"))
+        self.btn_start.setText(_translate("MainWindow", "开始同步"))
+        self.loading.setText(_translate("MainWindow", "          "))
+        self.btn_stop.setText(_translate("MainWindow", "停止同步"))
+        self.menu.setTitle(_translate("MainWindow", "设置"))
+        self.actionabc.setText(_translate("MainWindow", "boot"))
+        self.actionboot.setText(_translate("MainWindow", "开机自启"))
+
+```
+其中 **btn_start** 响应开始同步按钮，主要作用是启动上传文件线程，**btn_stop** 响应停止同步按钮，主要作用是强制停止上传文件线程。
+
+**btn_start**连接的函数如下
 
 ```python
 def startSyncFunction(self):
-    ip, port = self.ipText.get(), self.portText.get()
-    user, pwd = self.username.get(), self.password.get()
-    lPath, rPath = self.localPath.get(), self.remotePath.get()
-    self.startSyncButton.config(state='disabled')
-    self.stopSyncButton.config(state='normal')
-    self.ipText.config(state='disabled')
-    self.portText.config(state='disabled')
-    self.username.config(state='disabled')
-    self.password.delete(0, tk.END)
-    self.password.insert(0, '*' * len(pwd_input))
-    self.password.config(state='disabled')
-    self.localPath.config(state='disabled')
-    self.remotePath.config(state='disabled')
-    tk.Label(self.buttonPage, text='                               ').grid(row=1, column=1)
-    # 转圈圈子线程
-    self.T_loading = threading.Thread(target=self.loadingImg)
-    # 上传子线程
-    self.T_Upload = threading.Thread(target=self.UploadFile, args=(ip, int(port), user, pwd, lPath, rPath))
-    # 子线程开始
-    self.T_loading.start()
+    self.showMessage('File Sync', '开始同步')
+    ip, port = self.lineEdit_ip.text(), self.lineEdit_port.text()
+    user, pwd = self.lineEdit_username.text(), self.lineEdit_password.text()
+    lPath, rPath = self.lineEdit_localpath.text(), self.lineEdit_remotepath.text()
+    pwd_input = pwd
+    try:
+        pwd = pwd.replace('*', '')
+        if pwd == '':
+            pwd = self.regDict['pwd']
+    except KeyError:
+        pwd = pwd_input
+    # 写入注册表
+    SetValueEx(self.key, 'ip', 0, REG_SZ, ip)
+    SetValueEx(self.key, 'port', 0, REG_SZ, port)
+    SetValueEx(self.key, 'user', 0, REG_SZ, user)
+    SetValueEx(self.key, 'pwd', 0, REG_SZ, pwd)
+    SetValueEx(self.key, 'lPath', 0, REG_SZ, lPath)
+    SetValueEx(self.key, 'rPath', 0, REG_SZ, rPath)
+    self.btn_start.setEnabled(False)
+    self.btn_stop.setEnabled(True)
+    self.lineEdit_ip.setEnabled(False)
+    self.lineEdit_port.setEnabled(False)
+    self.lineEdit_username.setEnabled(False)
+    self.lineEdit_password.clear()
+    self.lineEdit_password.setText('*' * len(pwd_input))
+    self.lineEdit_password.setEnabled(False)
+    self.lineEdit_localpath.setEnabled(False)
+    self.lineEdit_remotepath.setEnabled(False)
+    self.loading.setVisible(True)
+    self.gif.start()
+
+    self.T_Upload = Thread(target=self.UploadFile, args=(ip, int(port), user, pwd, lPath, rPath))
+    self.T_Upload.setDaemon(True)
     self.T_Upload.start()
 ```
-**stopSyncButton** 代码如下
+**btn_stop** 代码如下
 
 ```python
 def stopSyncFunction(self):
+    self.showMessage('File Sync', '停止同步')
     stop_thread(self.T_Upload)
-    stop_thread(self.T_loading)
-    tk.Label(self.buttonPage, text='                               ').grid(row=1, column=1)
-    self.stopSyncButton.config(state='disabled')
-    self.startSyncButton.config(state='normal')
-    self.ipText.config(state='normal')
-    self.portText.config(state='normal')
-    self.username.config(state='normal')
-    self.password.config(state='normal')
-    self.localPath.config(state='normal')
-    self.remotePath.config(state='normal')
+
+    self.gif.stop()
+    self.loading.setVisible(False)
+    self.btn_stop.setEnabled(False)
+    self.btn_start.setEnabled(True)
+    self.lineEdit_ip.setEnabled(True)
+    self.lineEdit_port.setEnabled(True)
+    self.lineEdit_username.setEnabled(True)
+    self.lineEdit_password.setEnabled(True)
+    self.lineEdit_localpath.setEnabled(True)
+    self.lineEdit_remotepath.setEnabled(True)
 ```
 其中 **stop_thread** 用于停止线程，代码如下
 
@@ -220,287 +390,66 @@ def ReadReg(key):
         pass
     return regDict
 ```
-## 5. 程序最小化至托盘（SysTrayIcon）
-Tkinter 没有原生托盘代码，因此参考了相关博客，使用了 win32api 等一些库实现程序托盘，并添加了右键菜单和弹窗提示。
-
-使用的托盘类代码如下
+## 5. 程序最小化至托盘（QSystemTrayIcon）
 ```python
-import win32api, win32con, win32gui_struct, win32gui, os
+def initTrayIcon(self):
+    def open():
+        self.showNormal()
 
+    def quit():
+        QCoreApplication.quit()
 
-class SysTrayIcon(object):
-    '''SysTrayIcon类用于显示任务栏图标'''
-    QUIT = 'QUIT'
-    SPECIAL_ACTIONS = [QUIT]
-    FIRST_ID = 5320
+    def iconActivated(reason):
+        if reason in (QSystemTrayIcon.DoubleClick,):
+            open()
 
-    def __init__(s, icon, hover_text, menu_options, on_quit, tk_window=None, default_menu_index=None,
-                 window_class_name=None):
-        '''
-        icon         需要显示的图标文件路径
-        hover_text   鼠标停留在图标上方时显示的文字
-        menu_options 右键菜单，格式: (('a', None, callback), ('b', None, (('b1', None, callback),)))
-        on_quit      传递退出函数，在执行退出时一并运行
-        tk_window    传递Tk窗口，s.root，用于单击图标显示窗口
-        default_menu_index 不显示的右键菜单序号
-        window_class_name  窗口类名
-        '''
-        s.icon = icon
-        s.hover_text = hover_text
-        s.on_quit = on_quit
-        s.root = tk_window
+    startAction = QAction("开始同步", self)
+    startAction.triggered.connect(self.startSyncFunction)
+    stopAction = QAction("停止同步", self)
+    stopAction.triggered.connect(self.stopSyncFunction)
+    openAction = QAction("打开", self)
+    openAction.setIcon(QIcon.fromTheme("media-record"))
+    openAction.triggered.connect(open)
+    quitAction = QAction("退出", self)
+    quitAction.setIcon(QIcon.fromTheme("application-exit"))  # 从系统主题获取图标
+    quitAction.triggered.connect(quit)
 
-        menu_options = menu_options + (('退出', None, s.QUIT),)
-        s._next_action_id = s.FIRST_ID
-        s.menu_actions_by_id = set()
-        s.menu_options = s._add_ids_to_menu_options(list(menu_options))
-        s.menu_actions_by_id = dict(s.menu_actions_by_id)
-        del s._next_action_id
+    menu = QMenu(self)
+    menu.addAction(startAction)
+    menu.addAction(stopAction)
+    menu.addSeparator()
+    menu.addAction(openAction)
+    menu.addAction(quitAction)
 
-        s.default_menu_index = (default_menu_index or 0)
-        s.window_class_name = window_class_name or "SysTrayIconPy"
-
-        message_map = {win32gui.RegisterWindowMessage("TaskbarCreated"): s.restart,
-                       win32con.WM_DESTROY: s.destroy,
-                       win32con.WM_COMMAND: s.command,
-                       win32con.WM_USER + 20: s.notify, }
-        # 注册窗口类。
-        wc = win32gui.WNDCLASS()
-        wc.hInstance = win32gui.GetModuleHandle(None)
-        wc.lpszClassName = s.window_class_name
-        wc.style = win32con.CS_VREDRAW | win32con.CS_HREDRAW;
-        wc.hCursor = win32gui.LoadCursor(0, win32con.IDC_ARROW)
-        wc.hbrBackground = win32con.COLOR_WINDOW
-        wc.lpfnWndProc = message_map  # 也可以指定wndproc.
-        s.classAtom = win32gui.RegisterClass(wc)
-
-    def activation(s):
-        '''激活任务栏图标，不用每次都重新创建新的托盘图标'''
-        hinst = win32gui.GetModuleHandle(None)  # 创建窗口。
-        style = win32con.WS_OVERLAPPED | win32con.WS_SYSMENU
-        s.hwnd = win32gui.CreateWindow(s.classAtom,
-                                       s.window_class_name,
-                                       style,
-                                       0, 0,
-                                       win32con.CW_USEDEFAULT,
-                                       win32con.CW_USEDEFAULT,
-                                       0, 0, hinst, None)
-        win32gui.UpdateWindow(s.hwnd)
-        s.notify_id = None
-        s.refresh(title='软件已后台！', msg='点击重新打开', time=5)
-
-        win32gui.PumpMessages()
-
-    def refresh(s, title='', msg='', time=500):
-        '''刷新托盘图标
-           title 标题
-           msg   内容，为空的话就不显示提示
-           time  提示显示时间'''
-        hinst = win32gui.GetModuleHandle(None)
-        if os.path.isfile(s.icon):
-            icon_flags = win32con.LR_LOADFROMFILE | win32con.LR_DEFAULTSIZE
-            hicon = win32gui.LoadImage(hinst, s.icon, win32con.IMAGE_ICON,
-                                       0, 0, icon_flags)
-        else:  # 找不到图标文件 - 使用默认值
-            hicon = win32gui.LoadIcon(0, win32con.IDI_APPLICATION)
-
-        if s.notify_id:
-            message = win32gui.NIM_MODIFY
-        else:
-            message = win32gui.NIM_ADD
-
-        s.notify_id = (s.hwnd, 0,  # 句柄、托盘图标ID
-                       win32gui.NIF_ICON | win32gui.NIF_MESSAGE | win32gui.NIF_TIP | win32gui.NIF_INFO,
-                       # 托盘图标可以使用的功能的标识
-                       win32con.WM_USER + 20, hicon, s.hover_text,  # 回调消息ID、托盘图标句柄、图标字符串
-                       msg, time, title,  # 提示内容、提示显示时间、提示标题
-                       win32gui.NIIF_INFO  # 提示用到的图标
-                       )
-        win32gui.Shell_NotifyIcon(message, s.notify_id)
-
-    def show_menu(s):
-        '''显示右键菜单'''
-        menu = win32gui.CreatePopupMenu()
-        s.create_menu(menu, s.menu_options)
-
-        pos = win32gui.GetCursorPos()
-        win32gui.SetForegroundWindow(s.hwnd)
-        win32gui.TrackPopupMenu(menu,
-                                win32con.TPM_LEFTALIGN,
-                                pos[0],
-                                pos[1],
-                                0,
-                                s.hwnd,
-                                None)
-        win32gui.PostMessage(s.hwnd, win32con.WM_NULL, 0, 0)
-
-    def _add_ids_to_menu_options(s, menu_options):
-        result = []
-        for menu_option in menu_options:
-            option_text, option_icon, option_action = menu_option
-            if callable(option_action) or option_action in s.SPECIAL_ACTIONS:
-                s.menu_actions_by_id.add((s._next_action_id, option_action))
-                result.append(menu_option + (s._next_action_id,))
-            else:
-                result.append((option_text,
-                               option_icon,
-                               s._add_ids_to_menu_options(option_action),
-                               s._next_action_id))
-            s._next_action_id += 1
-        return result
-
-    def restart(s, hwnd, msg, wparam, lparam):
-        s.refresh()
-
-    def destroy(s, hwnd=None, msg=None, wparam=None, lparam=None, exit=1):
-        nid = (s.hwnd, 0)
-        win32gui.Shell_NotifyIcon(win32gui.NIM_DELETE, nid)
-        win32gui.PostQuitMessage(0)  # 终止应用程序。
-        if exit and s.on_quit:
-            s.on_quit()  # 需要传递自身过去时用 s.on_quit(s)
-        else:
-            s.root.deiconify()  # 显示tk窗口
-
-    def notify(s, hwnd, msg, wparam, lparam):
-        '''鼠标事件'''
-        if lparam == win32con.WM_LBUTTONDBLCLK:  # 双击左键
-            pass
-        elif lparam == win32con.WM_RBUTTONUP:  # 右键弹起
-            s.show_menu()
-        elif lparam == win32con.WM_LBUTTONUP:  # 左键弹起
-            s.destroy(exit=0)
-        return True
-        """
-        可能的鼠标事件：
-          WM_MOUSEMOVE      #光标经过图标
-          WM_LBUTTONDOWN    #左键按下
-          WM_LBUTTONUP      #左键弹起
-          WM_LBUTTONDBLCLK  #双击左键
-          WM_RBUTTONDOWN    #右键按下
-          WM_RBUTTONUP      #右键弹起
-          WM_RBUTTONDBLCLK  #双击右键
-          WM_MBUTTONDOWN    #滚轮按下
-          WM_MBUTTONUP      #滚轮弹起
-          WM_MBUTTONDBLCLK  #双击滚轮
-        """
-
-    def create_menu(s, menu, menu_options):
-        for option_text, option_icon, option_action, option_id in menu_options[::-1]:
-            if option_icon:
-                option_icon = s.prep_menu_icon(option_icon)
-
-            if option_id in s.menu_actions_by_id:
-                item, extras = win32gui_struct.PackMENUITEMINFO(text=option_text,
-                                                                hbmpItem=option_icon,
-                                                                wID=option_id)
-                win32gui.InsertMenuItem(menu, 0, 1, item)
-            else:
-                submenu = win32gui.CreatePopupMenu()
-                s.create_menu(submenu, option_action)
-                item, extras = win32gui_struct.PackMENUITEMINFO(text=option_text,
-                                                                hbmpItem=option_icon,
-                                                                hSubMenu=submenu)
-                win32gui.InsertMenuItem(menu, 0, 1, item)
-
-    def prep_menu_icon(s, icon):
-        # 加载图标。
-        ico_x = win32api.GetSystemMetrics(win32con.SM_CXSMICON)
-        ico_y = win32api.GetSystemMetrics(win32con.SM_CYSMICON)
-        hicon = win32gui.LoadImage(0, icon, win32con.IMAGE_ICON, ico_x, ico_y, win32con.LR_LOADFROMFILE)
-
-        hdcBitmap = win32gui.CreateCompatibleDC(0)
-        hdcScreen = win32gui.GetDC(0)
-        hbm = win32gui.CreateCompatibleBitmap(hdcScreen, ico_x, ico_y)
-        hbmOld = win32gui.SelectObject(hdcBitmap, hbm)
-        brush = win32gui.GetSysColorBrush(win32con.COLOR_MENU)
-        win32gui.FillRect(hdcBitmap, (0, 0, 16, 16), brush)
-        win32gui.DrawIconEx(hdcBitmap, 0, 0, hicon, ico_x, ico_y, 0, 0, win32con.DI_NORMAL)
-        win32gui.SelectObject(hdcBitmap, hbmOld)
-        win32gui.DeleteDC(hdcBitmap)
-
-        return hbm
-
-    def command(s, hwnd, msg, wparam, lparam):
-        id = win32gui.LOWORD(wparam)
-        s.execute_menu_option(id)
-
-    def execute_menu_option(s, id):
-        menu_action = s.menu_actions_by_id[id]
-        if menu_action == s.QUIT:
-            win32gui.DestroyWindow(s.hwnd)
-        else:
-            menu_action(s)
-
+    self.trayIcon = QSystemTrayIcon(self)
+    self.trayIcon.setIcon(QIcon(self.ico))
+    self.trayIcon.setToolTip("服务器同步软件")
+    self.trayIcon.setContextMenu(menu)
+    self.trayIcon.messageClicked.connect(open)
+    self.trayIcon.activated.connect(iconActivated)
 ```
-这部分代码参考了此博客
-> [SysTrayIcon 改的 python tkinter 最小化至系统托盘——作者：我的眼_001](https://blog.csdn.net/wodeyan001/article/details/82497564)
 
-结合 GUI 的代码如下
-
-在类的初始化部分
-```python
-self.root.bind("<Unmap>",
-               lambda
-                   event: self.Hidden_window() if self.root.state() == 'iconic' else False)  # 窗口最小化判断，可以说是调用最重要的一步
-self.root.protocol('WM_DELETE_WINDOW', self.exit)  # 点击Tk窗口关闭时直接调用s.exit，不使用默认关闭
-```
-托盘、右键菜单和消息弹窗部分代码如下
+关闭到托盘和消息弹窗部分代码如下
 
 ```python
-def show_msg(self, title='标题', msg='内容', time=5):
-    self.SysTrayIcon.refresh(title=title, msg=msg, time=time)
+def closeEvent(self, event):
+    if self.trayIcon.isVisible():
+        self.showMessage('File Sync', '程序已托盘运行')
 
-def use_startSyncFunc(self, _sysTrayIcon, icon=resource_path(os.path.join("img", "loading.ico"))):
-    # 此函数调用开始同步函数
-    self.startSyncFunction()
-    _sysTrayIcon.icon = icon
-    _sysTrayIcon.refresh()
-    # 气泡提示的例子
-    self.show_msg(title='开始同步', msg='开始同步！', time=5)
-
-def use_stopSyncFunc(self, _sysTrayIcon, icon=resource_path(os.path.join("img", "loading.ico"))):
-    # 此函数调用停止同步函数
-    self.stopSyncFunction()
-    _sysTrayIcon.icon = icon
-    _sysTrayIcon.refresh()
-    # 气泡提示的例子
-    self.show_msg(title='停止同步', msg='停止同步！', time=5)
-
-def Hidden_window(self, icon=resource_path(os.path.join("img", "loading.ico")), hover_text="服务器同步软件"):
-    '''隐藏窗口至托盘区，调用SysTrayIcon的重要函数'''
-
-    # 托盘图标右键菜单, 格式: ('name', None, callback),下面也是二级菜单的例子
-    # 24行有自动添加‘退出’，不需要的可删除
-    menu_options = (('开始同步', None, self.use_startSyncFunc),
-                    ('停止同步', None, self.use_stopSyncFunc))
-
-    self.root.withdraw()  # 隐藏tk窗口
-    if not self.SysTrayIcon:
-        self.SysTrayIcon = SysTrayIcon(
-            icon,  # 图标
-            hover_text,  # 光标停留显示文字
-            menu_options,  # 右键菜单
-            on_quit=self.exit,  # 退出调用
-            tk_window=self.root,  # Tk窗口
-        )
-    self.SysTrayIcon.activation()
-
-def exit(self, _sysTrayIcon=None):
-    self.root.destroy()
-    print('exit...')
+def showMessage(self, title, content):
+    self.trayIcon.showMessage(title, content, QSystemTrayIcon.Information, 1000)
 ```
 ## 6. 自启动部分（SchTasks）
 点击界面顶端设置中的开机自启动来进行设置，使用 **os.system** 执行 **SchTasks** 命令，代码如下
 ```python
 def AutoRun(self):  # 自启动函数
     try:
-        exePath = os.path.realpath(sys.executable)
-        AutoRunCommand = r'echo y | SCHTASKS /CREATE /TN "FileSync\FileSync" /TR "{}" /SC ONLOGON /DELAY 0000:30 /RL HIGHEST'.format(
-            exePath)
-        os.system(AutoRunCommand)
-        tkinter.messagebox.showinfo('开机自启动', '设置成功')
+        exePath = realpath(sys.executable)
+        AutoRunCommand = r'echo y | SCHTASKS /CREATE /TN "FileSync\FileSync" /TR "{}" /SC ONLOGON /DELAY 0000:30 /RL HIGHEST'.format(exePath)
+        system(AutoRunCommand)
+        self.showMessage('开机自启动', '设置成功')
     except:
-        tkinter.messagebox.showinfo('开机自启动', '设置失败，请手动创建任务计划')
+        self.showMessage('开机自启动', '设置失败，请手动创建任务计划')
 ```
 
 如果自启动设置失败，可通过手动创建管理员权限（由于进行了注册表操作）的任务计划，具体方法参考以下链接
@@ -510,7 +459,7 @@ def AutoRun(self):  # 自启动函数
 使用 **Pyinstaller** 进行打包，生成单exe命令，由于代码中使用了图片等数据，为了将这些数据一起打包，首先生成 **spec** 文件，代码如下
 
 ```python
-pyi-makespec -F -w --uac-admin --icon img/loading.ico File_Sync_Hidden.py -p SysTrayIcon.py
+pyi-makespec -F -w --uac-admin --icon img/loading.ico main.py -n File_Sync.exe
 ```
 然后将 **spec** 文件中的 **data行** 修改为
 
@@ -522,7 +471,5 @@ img为目前要打包的其他数据所在目录，img为使用时生成临时�
 最后生成exe，代码如下
 
 ```python
-pyinstaller -F -w --uac-admin File_Sync_Hidden.spec
+pyinstaller File_Sync.exe.spec
 ```
-## 8. 写在最后
-感谢文中所引用部分作者分享的代码，如果没有这些代码作为参考，想要完成这些功能并搭配协作将会很难完成，如果所使用的代码涉及到了侵权，请私信我告知。
