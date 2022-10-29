@@ -1,27 +1,28 @@
-# 打包时采用 pyi-makespec -F -w --uac-admin --icon img/loading.ico File_Sync_Hidden.py -p SysTrayIcon.py
+# 打包时采用 pyi-makespec -F -w --uac-admin --icon img/loading.ico main.py -n 服务器同步软件.exe
 # 修改 datas=[('img','img')],
-# 最后生成 pyinstaller -F -w --uac-admin File_Sync_Hidden.spec
+# 最后生成 pyinstaller 服务器同步软件.exe.spec
 import ctypes
 import inspect
-import threading
-import tkinter as tk
-import tkinter.messagebox
-from tkinter.ttk import Frame
+from os import system, walk
+from os.path import realpath, abspath, join
+from threading import Thread
+from time import sleep, localtime
+from winreg import EnumValue, CreateKey, HKEY_LOCAL_MACHINE, SetValueEx, REG_SZ
+
 import paramiko
-import os
-import sys
-from PIL import Image, ImageTk, ImageSequence
-import time
-from winreg import *
-from SysTrayIcon import SysTrayIcon
+from PyQt5.QtCore import QCoreApplication, QSize
+from PyQt5.QtGui import QIcon, QMovie
+from PyQt5.QtWidgets import QMainWindow, QApplication, QSystemTrayIcon, QAction, QMenu
+
+from MainWindow import Ui_MainWindow
 
 
 def resource_path(relative_path):
     if getattr(sys, 'frozen', False):  # 是否Bundle Resource
         base_path = sys._MEIPASS
     else:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+        base_path = abspath(".")
+    return join(base_path, relative_path)
 
 
 def _async_raise(tid, exctype):
@@ -60,121 +61,92 @@ def ReadReg(key):  # 读取对应key的注册表值，返回字典
     return regDict
 
 
-class MainPage(object):
-    def __init__(self, root):
-        self.SysTrayIcon = None
-        self.root = root
-        self.root.geometry('%dx%d' % (580, 250))  # 设置窗口大小
-        # 最小化托盘设置
-        self.root.bind("<Unmap>",
-                       lambda
-                           event: self.Hidden_window() if self.root.state() == 'iconic' else False)  # 窗口最小化判断，可以说是调用最重要的一步
-        self.root.protocol('WM_DELETE_WINDOW', self.exit)  # 点击Tk窗口关闭时直接调用s.exit，不使用默认关闭
-        # 菜单
-        self.menubar = tk.Menu(self.root)  # 创建一个顶级菜单
-        self.filemenu = tk.Menu(self.menubar, tearoff=False)  # 创建一个下拉菜单
-        self.filemenu.add_command(label='开机自启动', command=self.AutoRun)  # 下拉菜单中添加项
-        self.menubar.add_cascade(label="设置", menu=self.filemenu)  # 下拉菜单添加到顶级菜单
-        self.root.config(menu=self.menubar)  # 显示菜单
-        # 输入框配置
-        self.page = Frame(self.root, padding=(5, 10, 10, 10))  # 创建Frame,左上右下
-        self.page.pack()
-        # 按钮配置
-        self.buttonPage = Frame(self.root, padding=(10, 10, 10, 20))
-        self.buttonPage.pack(side=tk.BOTTOM)
+class MainWindow(QMainWindow, Ui_MainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)  # 传入QtWidgets.QMainWindow子类(MyWindow)对象
+        # 加载图片
+        self.gif = QMovie(resource_path(join("img", "loading.gif")))
+        self.gif.setScaledSize(QSize(30, 30))
+        self.loading.setMovie(self.gif)
+        self.ico = resource_path(join("img", "loading.ico"))
+        self.setWindowIcon(QIcon(self.ico))
+        # 初始化托盘
+        self.initTrayIcon()
+        self.trayIcon.show()
+        # 绑定按钮功能
+        self.actionboot.triggered.connect(self.AutoRun)  # 自启动
+        self.btn_start.clicked.connect(self.startSyncFunction)
+        self.btn_stop.clicked.connect(self.stopSyncFunction)
+        self.btn_stop.setEnabled(False)
         # 读取注册表
         self.key = CreateKey(HKEY_LOCAL_MACHINE, r'SOFTWARE\\服务器同步软件')
         self.regDict = ReadReg(self.key)
-        self.errorflag = 0
-        # ip输入
-        tk.Label(self.page, text='IP         ：').grid(row=1, column=1)
-        self.ipText = tk.Entry(self.page)
-        self.ipText.grid(row=1, column=2)
+        self.notError = True
         try:
-            self.ipText.delete(0, tk.END)
-            self.ipText.insert(0, self.regDict['ip'])
+            self.lineEdit_ip.clear()
+            self.lineEdit_ip.setText(self.regDict['ip'])
+            self.lineEdit_port.clear()
+            self.lineEdit_port.setText(self.regDict['port'])
+            self.lineEdit_username.clear()
+            self.lineEdit_username.setText(self.regDict['user'])
+            self.lineEdit_password.clear()
+            self.lineEdit_password.setText(self.regDict['pwd'])
+            self.lineEdit_localpath.clear()
+            self.lineEdit_localpath.setText(self.regDict['lPath'])
+            self.lineEdit_remotepath.clear()
+            self.lineEdit_remotepath.setText(self.regDict['rPath'])
         except KeyError:
-            self.errorflag += 1
-        tk.Label(self.page, text='    ').grid(row=1, column=3)
-        # 端口输入
-        tk.Label(self.page, text='端      口：').grid(row=1, column=4)
-        self.portText = tk.Entry(self.page)
-        self.portText.grid(row=1, column=5)
-        try:
-            self.portText.delete(0, tk.END)
-            self.portText.insert(0, self.regDict['port'])
-        except KeyError:
-            self.errorflag += 1
-        # 空行
-        tk.Label(self.page, text='    ').grid(row=2)
-        # 用户名输入
-        tk.Label(self.page, text='用 户 名 ：').grid(row=3, column=1)
-        self.username = tk.Entry(self.page)
-        self.username.grid(row=3, column=2)
-        try:
-            self.username.delete(0, tk.END)
-            self.username.insert(0, self.regDict['user'])
-        except KeyError:
-            self.errorflag += 1
-        tk.Label(self.page, text='    ').grid(row=3, column=3)
-        # 密码输入
-        tk.Label(self.page, text='密      码：').grid(row=3, column=4)
-        self.password = tk.Entry(self.page)
-        self.password.grid(row=3, column=5)
-        try:
-            self.password.delete(0, tk.END)
-            self.password.insert(0, self.regDict['pwd'])
-        except KeyError:
-            self.errorflag += 1
-        # 空行
-        tk.Label(self.page, text='    ').grid(row=4)
-        # 本地文件夹输入
-        tk.Label(self.page, text='本地路径：').grid(row=5, column=1)
-        self.localPath = tk.Entry(self.page, width=54)
-        self.localPath.grid(row=5, column=2, columnspan=4)
-        try:
-            self.localPath.delete(0, tk.END)
-            self.localPath.insert(0, self.regDict['lPath'])
-        except KeyError:
-            self.errorflag += 1
-        # 空行
-        tk.Label(self.page, text='    ').grid(row=6)
-        # 远程文件夹输入
-        tk.Label(self.page, text='远端路径：').grid(row=7, column=1)
-        self.remotePath = tk.Entry(self.page, width=54)
-        self.remotePath.grid(row=7, column=2, columnspan=4)
-        try:
-            self.remotePath.delete(0, tk.END)
-            self.remotePath.insert(0, self.regDict['rPath'])
-        except KeyError:
-            self.errorflag += 1
-        # 同步按钮
-        self.startSyncButton = tk.Button(self.buttonPage, text='开始同步', command=self.startSyncFunction)
-        self.startSyncButton.grid(row=1, column=0)
-        tk.Label(self.buttonPage, text='                               ').grid(row=1, column=1)
-        # 停止按钮
-        self.stopSyncButton = tk.Button(self.buttonPage, text='停止同步', state='disabled', command=self.stopSyncFunction)
-        self.stopSyncButton.grid(row=1, column=2)
-        # 加载图片
-        self.gif = resource_path(os.path.join("img", "loading.gif"))
-        self.ico = resource_path(os.path.join("img", "loading.ico"))
-        self.img = Image.open(self.gif)  # 打开图片
-        iter = ImageSequence.Iterator(self.img)  # 分割成帧
-        self.img = []
-        for frame in iter:  # 每个frame是1帧
-            frame = frame.convert('RGBA')
-            frame = frame.resize((25, 25), Image.ANTIALIAS)
-            frame = ImageTk.PhotoImage(frame)
-            self.img.append(frame)
-        # 如果信息全，则执行上传
-        if self.errorflag == 0:
-            self.startSyncFunction()
-            self.Hidden_window()
+            self.notError = False
+
+    def initTrayIcon(self):
+        def open():
+            self.showNormal()
+
+        def quit():
+            QCoreApplication.quit()
+
+        def iconActivated(reason):
+            if reason in (QSystemTrayIcon.DoubleClick,):
+                open()
+
+        startAction = QAction("开始同步", self)
+        startAction.triggered.connect(self.startSyncFunction)
+        stopAction = QAction("停止同步", self)
+        stopAction.triggered.connect(self.stopSyncFunction)
+        openAction = QAction("打开", self)
+        openAction.setIcon(QIcon.fromTheme("media-record"))
+        openAction.triggered.connect(open)
+        quitAction = QAction("退出", self)
+        quitAction.setIcon(QIcon.fromTheme("application-exit"))  # 从系统主题获取图标
+        quitAction.triggered.connect(quit)
+
+        menu = QMenu(self)
+        menu.addAction(startAction)
+        menu.addAction(stopAction)
+        menu.addSeparator()
+        menu.addAction(openAction)
+        menu.addAction(quitAction)
+
+        self.trayIcon = QSystemTrayIcon(self)
+        self.trayIcon.setIcon(QIcon(self.ico))
+        self.trayIcon.setToolTip("服务器同步软件")
+        self.trayIcon.setContextMenu(menu)
+        self.trayIcon.messageClicked.connect(open)
+        self.trayIcon.activated.connect(iconActivated)
+
+    def closeEvent(self, event):
+        if self.trayIcon.isVisible():
+            self.showMessage('File Sync', '程序已托盘运行')
+
+    def showMessage(self, title, content):
+        self.trayIcon.showMessage(title, content, QSystemTrayIcon.Information, 1000)
 
     def startSyncFunction(self):
-        ip, port = self.ipText.get(), self.portText.get()
-        user, pwd = self.username.get(), self.password.get()
-        lPath, rPath = self.localPath.get(), self.remotePath.get()
+        self.showMessage('File Sync', '开始同步')
+        ip, port = self.lineEdit_ip.text(), self.lineEdit_port.text()
+        user, pwd = self.lineEdit_username.text(), self.lineEdit_password.text()
+        lPath, rPath = self.lineEdit_localpath.text(), self.lineEdit_remotepath.text()
         pwd_input = pwd
         try:
             pwd = pwd.replace('*', '')
@@ -182,57 +154,50 @@ class MainPage(object):
                 pwd = self.regDict['pwd']
         except KeyError:
             pwd = pwd_input
-        self.startSyncButton.config(state='disabled')
-        self.stopSyncButton.config(state='normal')
-        self.ipText.config(state='disabled')
-        self.portText.config(state='disabled')
-        self.username.config(state='disabled')
-        self.password.delete(0, tk.END)
-        self.password.insert(0, '*' * len(pwd_input))
-        self.password.config(state='disabled')
-        self.localPath.config(state='disabled')
-        self.remotePath.config(state='disabled')
+        # 写入注册表
         SetValueEx(self.key, 'ip', 0, REG_SZ, ip)
         SetValueEx(self.key, 'port', 0, REG_SZ, port)
         SetValueEx(self.key, 'user', 0, REG_SZ, user)
         SetValueEx(self.key, 'pwd', 0, REG_SZ, pwd)
         SetValueEx(self.key, 'lPath', 0, REG_SZ, lPath)
         SetValueEx(self.key, 'rPath', 0, REG_SZ, rPath)
-        tk.Label(self.buttonPage, text='                               ').grid(row=1, column=1)
-        # 转圈圈子线程
-        self.T_loading = threading.Thread(target=self.loadingImg)
-        # 上传子线程
-        self.T_Upload = threading.Thread(target=self.UploadFile, args=(ip, int(port), user, pwd, lPath, rPath))
-        # 子线程开始
-        self.T_loading.start()
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self.lineEdit_ip.setEnabled(False)
+        self.lineEdit_port.setEnabled(False)
+        self.lineEdit_username.setEnabled(False)
+        self.lineEdit_password.clear()
+        self.lineEdit_password.setText('*' * len(pwd_input))
+        self.lineEdit_password.setEnabled(False)
+        self.lineEdit_localpath.setEnabled(False)
+        self.lineEdit_remotepath.setEnabled(False)
+        self.loading.setVisible(True)
+        self.gif.start()
+
+        self.T_Upload = Thread(target=self.UploadFile, args=(ip, int(port), user, pwd, lPath, rPath))
+        self.T_Upload.setDaemon(True)
         self.T_Upload.start()
 
     def stopSyncFunction(self):
+        self.showMessage('File Sync', '停止同步')
         stop_thread(self.T_Upload)
-        stop_thread(self.T_loading)
-        tk.Label(self.buttonPage, text='                               ').grid(row=1, column=1)
-        self.stopSyncButton.config(state='disabled')
-        self.startSyncButton.config(state='normal')
-        self.ipText.config(state='normal')
-        self.portText.config(state='normal')
-        self.username.config(state='normal')
-        self.password.config(state='normal')
-        self.localPath.config(state='normal')
-        self.remotePath.config(state='normal')
 
-    def loadingImg(self):  # 转圈圈函数
-        while 1:
-            for pic in self.img:  # 每个pic是1帧
-                tk.Label(self.buttonPage, image=pic).grid(row=1, column=1)
-                time.sleep(0.2)
-                self.root.update_idletasks()
-                self.root.update()
+        self.gif.stop()
+        self.loading.setVisible(False)
+        self.btn_stop.setEnabled(False)
+        self.btn_start.setEnabled(True)
+        self.lineEdit_ip.setEnabled(True)
+        self.lineEdit_port.setEnabled(True)
+        self.lineEdit_username.setEnabled(True)
+        self.lineEdit_password.setEnabled(True)
+        self.lineEdit_localpath.setEnabled(True)
+        self.lineEdit_remotepath.setEnabled(True)
 
     def UploadFile(self, host_ip, host_port, host_username, host_password, local_path, remote_path):  # 上传函数
         while 1:
-            time.sleep(1)
+            sleep(1)
             try:
-                if (time.localtime().tm_min) % 5 == 0:
+                if (localtime().tm_min) % 5 == 0:
                     scp = paramiko.Transport((host_ip, host_port))
                     scp.connect(username=host_username, password=host_password)
                     sftp = paramiko.SFTPClient.from_transport(scp)
@@ -247,98 +212,47 @@ class MainPage(object):
                     except:
                         pass
                     scp.close()
-            except:
-                tk.Label(self.buttonPage, text='信息错误请检查！！！', fg='red').grid(row=1, column=1)
-                # 结束转圈圈线程
-                stop_thread(self.T_loading)
-                break
+            except Exception as e:
+                print(e)
+                self.loading.setText('信息错误请检查！！！')
 
     def recursiveUpload(self, sftp, localPath, remotePath):  # 递归上传，供上传函数调用
-        for root, paths, files in os.walk(localPath):  # 遍历读取目录里的所有文件
+        for root, paths, files in walk(localPath):  # 遍历读取目录里的所有文件
             remote_files = sftp.listdir(remotePath)  # 获取远端服务器路径内所有文件名
             for file in files:
                 if file not in remote_files:
                     print('正在上传', remotePath + '/' + file)
-                    sftp.put(os.path.join(root, file), remotePath + '/' + file)
+                    sftp.put(join(root, file), remotePath + '/' + file)
             for path in paths:
                 if path not in remote_files:
                     print('创建文件夹', remotePath + '/' + path)
                     sftp.mkdir(remotePath + '/' + path)
-                self.recursiveUpload(sftp, os.path.join(localPath, path), remotePath + '/' + path)
+                self.recursiveUpload(sftp, join(localPath, path), remotePath + '/' + path)
             break
-
-    # def DownloadFile(self, host_ip, host_port, host_username, host_password, local_path, remote_path):
-    #     scp = paramiko.Transport((host_ip, host_port))
-    #     scp.connect(username=host_username, password=host_password)
-    #     sftp = paramiko.SFTPClient.from_transport(scp)
-    #     try:
-    #         remote_files = sftp.listdir(remote_path)
-    #         for file in remote_files:  # 遍历读取远程目录里的所有文件
-    #             print(file)
-    #             time.sleep(1)
-    #             # local_file = local_path + file
-    #             # remote_file = remote_path + file
-    #             # sftp.get(remote_file, local_file)
-    #     except IOError:  # 如果目录不存在则抛出异常
-    #         return ("remote_path or local_path is not exist")
-    #     scp.close()
 
     def AutoRun(self):  # 自启动函数
         try:
-            exePath = os.path.realpath(sys.executable)
-            AutoRunCommand = r'echo y | SCHTASKS /CREATE /TN "FileSync\FileSync" /TR "{}" /SC ONLOGON /DELAY 0000:30 /RL HIGHEST'.format(
-                exePath)
-            os.system(AutoRunCommand)
-            tkinter.messagebox.showinfo('开机自启动', '设置成功')
+            exePath = realpath(sys.executable)
+            AutoRunCommand = r'echo y | SCHTASKS /CREATE /TN "FileSync\FileSync" /TR "{}" /SC ONLOGON /DELAY 0000:30 /RL HIGHEST'.format(exePath)
+            system(AutoRunCommand)
+            self.showMessage('开机自启动', '设置成功')
         except:
-            tkinter.messagebox.showinfo('开机自启动', '设置失败，请手动创建任务计划')
-
-    # 以下是菜单功能
-    def show_msg(self, title='标题', msg='内容', time=5):
-        self.SysTrayIcon.refresh(title=title, msg=msg, time=time)
-
-    def use_startSyncFunc(self, _sysTrayIcon):
-        # 此函数调用开始同步函数
-        self.startSyncFunction()
-        _sysTrayIcon.icon = self.ico
-        _sysTrayIcon.refresh()
-        # 气泡提示的例子
-        self.show_msg(title='开始同步', msg='开始同步！', time=5)
-
-    def use_stopSyncFunc(self, _sysTrayIcon):
-        # 此函数调用停止同步函数
-        self.stopSyncFunction()
-        _sysTrayIcon.icon = self.ico
-        _sysTrayIcon.refresh()
-        # 气泡提示的例子
-        self.show_msg(title='停止同步', msg='停止同步！', time=5)
-
-    def Hidden_window(self, hover_text="服务器同步软件"):
-        '''隐藏窗口至托盘区，调用SysTrayIcon的重要函数'''
-
-        # 托盘图标右键菜单, 格式: ('name', None, callback),下面也是二级菜单的例子
-        # 24行有自动添加‘退出’，不需要的可删除
-        menu_options = (('开始同步', None, self.use_startSyncFunc),
-                        ('停止同步', None, self.use_stopSyncFunc))
-
-        self.root.withdraw()  # 隐藏tk窗口
-        if not self.SysTrayIcon:
-            self.SysTrayIcon = SysTrayIcon(
-                self.ico,  # 图标
-                hover_text,  # 光标停留显示文字
-                menu_options,  # 右键菜单
-                on_quit=self.exit,  # 退出调用
-                tk_window=self.root,  # Tk窗口
-            )
-        self.SysTrayIcon.activation()
-
-    def exit(self, _sysTrayIcon=None):
-        self.root.destroy()
-        print('exit...')
+            self.showMessage('开机自启动', '设置失败，请手动创建任务计划')
 
 
-root = tk.Tk()
-root.iconbitmap(resource_path(os.path.join("img", "loading.ico")))
-root.title('服务器同步软件')
-MainPage(root)
-root.mainloop()
+if __name__ == '__main__':
+    import sys
+
+    app = QApplication(sys.argv)
+    QApplication.setQuitOnLastWindowClosed(False)  # 关闭最后一个窗口不退出程序
+
+    mw = MainWindow()
+    # 如果信息全，则执行上传
+    if mw.notError:
+        if mw.trayIcon.isVisible():
+            mw.showMessage('File Sync', '程序已托盘运行')
+        mw.startSyncFunction()
+    else:
+        mw.show()
+
+    sys.exit(app.exec_())
